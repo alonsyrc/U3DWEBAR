@@ -155,50 +155,32 @@
                     window.requestingForPermissions = false;
                 }           
             }
-                async function StartWebcam(){
-                console.log("StartWebcam");
-
-                while(window.requestingForPermissions){
+            async function StartWebcam(){
+                console.log("StartWebcam")
+                while (window.requestingForPermissions) {
+                    // Wait until requestingForPermissions becomes true.
                     console.log("Waiting for permissions...");
-                    await new Promise(resolve => setTimeout(resolve,100));
+                    await new Promise(resolve => setTimeout(resolve, 100)); // Adjust the delay time as needed.
                 }
-
                 console.log("Got Permissions");
-
-                if(window.webcamStream){
-
+                if(window.webcamStream)
+                {
                     const video = document.querySelector("#webcam-video");
-                    video.srcObject = window.webcamStream;
-
-                    try{
-
-                        console.log("Pito de Payaso");
-                        console.log(window.unityInstance);
-                        console.log(window.unityInstance.Module);
-                        console.log(window.arCamera);
-                        // solo resetear video si quieres
-                        video.pause();
-                        video.load();
-
-                        if(arCamera){
-                            arCamera.stopWebcam();
-                        }
-
+                    video.srcObject = webcamStream;
+                    try {
                         await arCamera.startWebcam(video);
-
                         console.log("Webcam started successfully");
-                        window.unityInstance.SendMessage('ARCamera','OnStartWebcamSuccess');
-
-                    }catch(err){
-
-                        console.error("Webcam failed to start - ", err);
-                        window.unityInstance.SendMessage('ARCamera','OnStartWebcamFail');
+                        window.unityInstance.SendMessage('ARCamera', 'OnStartWebcamSuccess');
                     }
-
-                }else{
-                    console.error("Webcam failed to start - permission not yet granted");
-                    window.unityInstance.SendMessage('ARCamera','OnStartWebcamFail');
+                    catch(err){
+                        console.error("Webcam failed to start - ", err);
+                        window.unityInstance.SendMessage('ARCamera', 'OnStartWebcamFail');
+                    }   
                 }
+                else{
+                    console.error("Webcam failed to start - permission not yet granted");
+                    window.unityInstance.SendMessage('ARCamera', 'OnStartWebcamFail');
+                }  
             }
             async function LoadWebcams(){
                 let camDevices = [];
