@@ -24,7 +24,6 @@
             background: #fffa;
             z-index: 99;
         }
-        /* BOTONES DE ACCIÓN - RESPONSIVE */
         .action-buttons {
             position: fixed;
             bottom: 20px;
@@ -49,21 +48,9 @@
             flex: 1;
             max-width: 170px;
         }
-        /* Ajustes para pantallas muy pequeñas */
         @media (max-width: 360px) {
-            .action-btn {
-                padding: 10px 16px;
-                font-size: 14px;
-            }
-            .action-buttons {
-                bottom: 15px;
-                gap: 8px;
-            }
-        }
-        @media (max-height: 600px) {
-            .action-buttons {
-                bottom: 12px;
-            }
+            .action-btn { padding: 10px 16px; font-size: 14px; }
+            .action-buttons { bottom: 15px; gap: 8px; }
         }
     </style>
 </head>
@@ -219,26 +206,16 @@
             const unityCanvas = document.querySelector("#unity-canvas");
             if (!unityCanvas) return;
             try {
-                const tempCanvas = document.createElement("canvas");
-                const ctx = tempCanvas.getContext("2d");
-                tempCanvas.width = unityCanvas.width;
-                tempCanvas.height = unityCanvas.height;
-                const videoCanvas = document.querySelector("#video-canvas");
-                if (videoCanvas && videoCanvas.width > 0) {
-                    ctx.drawImage(videoCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
-                }
-                ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
-                const blob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', 0.95));
+                const dataUrl = unityCanvas.toDataURL('image/jpeg', 0.95);
+                const blob = await fetch(dataUrl).then(r => r.blob());
                 const file = new File([blob], `watanoge-photo-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.jpg`, { type: "image/jpeg" });
                 if (navigator.share && navigator.canShare({files: [file]})) {
                     await navigator.share({ files: [file], title: 'Foto AR Watanoge' });
                 } else {
-                    const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url;
+                    a.href = dataUrl;
                     a.download = file.name;
                     a.click();
-                    URL.revokeObjectURL(url);
                 }
                 showNotification("✅ Foto guardada");
             } catch (err) {
@@ -246,46 +223,54 @@
                 showNotification("❌ Error al tomar la foto", "error");
             }
         }
-        // ==================== VIDEO ====================
+        // ==================== VIDEO (Captura Unity con captureStream) ====================
         function ToggleVideoRecording() {
             const btn = document.getElementById("videoButton");
+            const unityCanvas = document.querySelector("#unity-canvas");
             if (!isRecording) {
-                if (!window.webcamStream) {
-                    showNotification("❌ Cámara no disponible", "error");
+                if (!unityCanvas) {
+                    showNotification("❌ Canvas no disponible", "error");
                     return;
                 }
                 recordedChunks = [];
-                const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
-                
-                mediaRecorder = new MediaRecorder(window.webcamStream, { mimeType: mimeType });
-                mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-                mediaRecorder.onstop = async () => {
-                    const blob = new Blob(recordedChunks, { type: mimeType });
-                    const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-                    const filename = `watanoge-video-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.${extension}`;
-                    const file = new File([blob], filename, { type: mimeType });
-                    try {
-                        if (navigator.share && navigator.canShare({files: [file]})) {
-                            await navigator.share({ files: [file], title: 'Video AR Watanoge' });
-                        } else {
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = filename;
-                            a.click();
-                            URL.revokeObjectURL(url);
+                try {
+                    // Capturamos el stream directamente del canvas de Unity (incluye AR)
+                    const canvasStream = unityCanvas.captureStream(30); // 30 FPS
+                    mediaRecorder = new MediaRecorder(canvasStream, { 
+                        mimeType: MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm'
+                    });
+                    mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+                    mediaRecorder.onstop = async () => {
+                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                        const extension = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+                        const filename = `watanoge-video-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.${extension}`;
+                        const file = new File([blob], filename, { type: mediaRecorder.mimeType });
+                        try {
+                            if (navigator.share && navigator.canShare({files: [file]})) {
+                                await navigator.share({ files: [file], title: 'Video AR Watanoge' });
+                            } else {
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = filename;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                            }
+                            showNotification("✅ Video guardado");
+                        } catch (err) {
+                            console.error(err);
+                            showNotification("❌ Error al guardar video", "error");
                         }
-                        showNotification("✅ Video guardado");
-                    } catch (err) {
-                        console.error(err);
-                        showNotification("❌ Error al guardar video", "error");
-                    }
-                };
-                mediaRecorder.start();
-                isRecording = true;
-                btn.textContent = "⏹️ Detener";
-                btn.style.background = "rgba(200,0,0,0.95)";
-                showNotification("🎥 Grabando...");
+                    };
+                    mediaRecorder.start();
+                    isRecording = true;
+                    btn.textContent = "⏹️ Detener";
+                    btn.style.background = "rgba(200,0,0,0.95)";
+                    showNotification("🎥 Grabando AR...");
+                } catch (err) {
+                    console.error(err);
+                    showNotification("❌ Error al iniciar grabación", "error");
+                }
             } else {
                 mediaRecorder.stop();
                 isRecording = false;
