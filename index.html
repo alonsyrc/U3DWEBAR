@@ -73,24 +73,9 @@
         <p style="text-align: center; width:60vw;">This augmented reality experience requires access to your device's camera</p>
         <button id="startARButton" onclick="StartAR()" style="display:none">ALLOW ACCESS</button>
     </div>
-    <div id="screenshotDiv" style="display: none;" class="ctaDiv">
-        <div style="position:relative; background-color:white; padding:10px; box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.3), 0 6px 20px 0 rgba(0, 0, 0, 0.25);">
-            <img id="screenshotImg" src="" alt="screenshot" style="width:80vw; height:80vh">
-            <button onclick="document.getElementById('screenshotDiv').style.display = 'none';" style="position:absolute; transform:translateY(-100%); right:0; top:0">Close</button>
-        </div>
-    </div>
-    <div id="confirmUrlDiv" style="display: none;" class="ctaDiv">
-        <div style="position:relative; background-color:white; padding:10px; box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.3), 0 6px 20px 0 rgba(0, 0, 0, 0.25); width: 80vw; display:flex; flex-direction: column; align-items: center;">
-            <p id="confirmUrlText" style="text-align: center; width:80%; overflow: hidden; text-overflow: ellipsis;">Are you sure you want to visit url.com?</p>
-            <div>
-                <button onclick="window.open(newUrlString, '_blank').focus(); document.getElementById('confirmUrlDiv').style.display = 'none'">VISIT SITE</button>
-                <button onclick="document.getElementById('confirmUrlDiv').style.display = 'none'">GO BACK</button>
-            </div>
-        </div>
-    </div>
-    <div id="errorDiv" class="ctaDiv" style="display: none; background:#aaa">
-        <p id="errorText" style="text-align: center; width:60vw; color:white"></p>
-    </div>
+    <div id="screenshotDiv" style="display: none;" class="ctaDiv">...</div>
+    <div id="confirmUrlDiv" style="display: none;" class="ctaDiv">...</div>
+    <div id="errorDiv" class="ctaDiv" style="display: none; background:#aaa">...</div>
     <div id="unity-container" class="unity-mobile">
         <canvas id="unity-canvas" style="width: 100%; height: 100%; background: #0000; z-index: -99"></canvas>
         <div id="unity-loading-bar">
@@ -216,7 +201,7 @@
                 if (window.unityInstance) window.unityInstance.SendMessage('ARCamera', 'OnStartWebcamFail');
             }
         }
-        // ==================== FOTO (Captura Unity) ====================
+        // ==================== FOTO ====================
         async function TakePhoto() {
             const unityCanvas = document.querySelector("#unity-canvas");
             if (!unityCanvas) return;
@@ -238,46 +223,54 @@
                 showNotification("❌ Error al tomar la foto", "error");
             }
         }
-        // ==================== VIDEO ====================
+        // ==================== VIDEO (Captura Unity con captureStream) ====================
         function ToggleVideoRecording() {
             const btn = document.getElementById("videoButton");
+            const unityCanvas = document.querySelector("#unity-canvas");
             if (!isRecording) {
-                if (!window.webcamStream) {
-                    showNotification("❌ Cámara no disponible", "error");
+                if (!unityCanvas) {
+                    showNotification("❌ Canvas no disponible", "error");
                     return;
                 }
                 recordedChunks = [];
-                const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
-                
-                mediaRecorder = new MediaRecorder(window.webcamStream, { mimeType: mimeType });
-                mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-                mediaRecorder.onstop = async () => {
-                    const blob = new Blob(recordedChunks, { type: mimeType });
-                    const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-                    const filename = `watanoge-video-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.${extension}`;
-                    const file = new File([blob], filename, { type: mimeType });
-                    try {
-                        if (navigator.share && navigator.canShare({files: [file]})) {
-                            await navigator.share({ files: [file], title: 'Video AR Watanoge' });
-                        } else {
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = filename;
-                            a.click();
-                            URL.revokeObjectURL(url);
+                try {
+                    // Capturamos el stream directamente del canvas de Unity (incluye AR)
+                    const canvasStream = unityCanvas.captureStream(30); // 30 FPS
+                    mediaRecorder = new MediaRecorder(canvasStream, { 
+                        mimeType: MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm'
+                    });
+                    mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+                    mediaRecorder.onstop = async () => {
+                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                        const extension = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+                        const filename = `watanoge-video-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.${extension}`;
+                        const file = new File([blob], filename, { type: mediaRecorder.mimeType });
+                        try {
+                            if (navigator.share && navigator.canShare({files: [file]})) {
+                                await navigator.share({ files: [file], title: 'Video AR Watanoge' });
+                            } else {
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = filename;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                            }
+                            showNotification("✅ Video guardado");
+                        } catch (err) {
+                            console.error(err);
+                            showNotification("❌ Error al guardar video", "error");
                         }
-                        showNotification("✅ Video guardado");
-                    } catch (err) {
-                        console.error(err);
-                        showNotification("❌ Error al guardar video", "error");
-                    }
-                };
-                mediaRecorder.start();
-                isRecording = true;
-                btn.textContent = "⏹️ Detener";
-                btn.style.background = "rgba(200,0,0,0.95)";
-                showNotification("🎥 Grabando...");
+                    };
+                    mediaRecorder.start();
+                    isRecording = true;
+                    btn.textContent = "⏹️ Detener";
+                    btn.style.background = "rgba(200,0,0,0.95)";
+                    showNotification("🎥 Grabando AR...");
+                } catch (err) {
+                    console.error(err);
+                    showNotification("❌ Error al iniciar grabación", "error");
+                }
             } else {
                 mediaRecorder.stop();
                 isRecording = false;
