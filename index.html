@@ -126,7 +126,6 @@
             document.getElementById("startARButton").style.display = "block";
         };
         initialize();
-        // ==================== START AR ====================
         function StartAR() {
             const canvas = document.querySelector("#unity-canvas");
             document.getElementById("startARDiv").style.display = "none";
@@ -201,12 +200,23 @@
                 if (window.unityInstance) window.unityInstance.SendMessage('ARCamera', 'OnStartWebcamFail');
             }
         }
-        // ==================== FOTO ====================
+        // ==================== FOTO - CÁMARA + UNITY ====================
         async function TakePhoto() {
             const unityCanvas = document.querySelector("#unity-canvas");
+            const videoCanvas = document.querySelector("#video-canvas");
             if (!unityCanvas) return;
             try {
-                const dataUrl = unityCanvas.toDataURL('image/jpeg', 0.95);
+                const tempCanvas = document.createElement("canvas");
+                const ctx = tempCanvas.getContext("2d");
+                tempCanvas.width = unityCanvas.width;
+                tempCanvas.height = unityCanvas.height;
+                // 1. Fondo: Feed de la cámara
+                if (videoCanvas && videoCanvas.width > 0) {
+                    ctx.drawImage(videoCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+                }
+                // 2. Encima: Unity (AR)
+                ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+                const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
                 const blob = await fetch(dataUrl).then(r => r.blob());
                 const file = new File([blob], `watanoge-photo-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.jpg`, { type: "image/jpeg" });
                 if (navigator.share && navigator.canShare({files: [file]})) {
@@ -223,7 +233,8 @@
                 showNotification("❌ Error al tomar la foto", "error");
             }
         }
-        // ==================== VIDEO (Captura Unity con captureStream) ====================
+        // ==================== VIDEO - CÁMARA + UNITY (por ahora solo Unity) ====================
+        // Nota: Grabar video con composición es más complejo. Por ahora usamos Unity canvas.
         function ToggleVideoRecording() {
             const btn = document.getElementById("videoButton");
             const unityCanvas = document.querySelector("#unity-canvas");
@@ -234,8 +245,7 @@
                 }
                 recordedChunks = [];
                 try {
-                    // Capturamos el stream directamente del canvas de Unity (incluye AR)
-                    const canvasStream = unityCanvas.captureStream(30); // 30 FPS
+                    const canvasStream = unityCanvas.captureStream(30);
                     mediaRecorder = new MediaRecorder(canvasStream, { 
                         mimeType: MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm'
                     });
@@ -266,7 +276,7 @@
                     isRecording = true;
                     btn.textContent = "⏹️ Detener";
                     btn.style.background = "rgba(200,0,0,0.95)";
-                    showNotification("🎥 Grabando AR...");
+                    showNotification("🎥 Grabando...");
                 } catch (err) {
                     console.error(err);
                     showNotification("❌ Error al iniciar grabación", "error");
