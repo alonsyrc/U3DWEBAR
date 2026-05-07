@@ -85,7 +85,7 @@
             </div>
         </div>
     </div>
-    <!-- BOTONES DE ACCIÓN -->
+    <!-- BOTONES -->
     <div class="action-buttons">
         <button id="photoButton" onclick="TakePhoto()" class="action-btn" 
                 style="background:rgba(0,0,0,0.85); display:none;">
@@ -172,9 +172,7 @@
         }
         async function StartWebcam() {
             console.log("=== StartWebcam called ===");
-            while (window.requestingForPermissions) {
-                await new Promise(r => setTimeout(r, 100));
-            }
+            while (window.requestingForPermissions) await new Promise(r => setTimeout(r, 100));
             let attempts = 0;
             while ((!window.unityInstance || !window.unityInstanceReady) && attempts < 120) {
                 await new Promise(r => setTimeout(r, 150));
@@ -200,7 +198,7 @@
                 if (window.unityInstance) window.unityInstance.SendMessage('ARCamera', 'OnStartWebcamFail');
             }
         }
-        // ==================== FOTO - CÁMARA + UNITY ====================
+        // ==================== FOTO - CÁMARA + UNITY (CORREGIDO) ====================
         async function TakePhoto() {
             const unityCanvas = document.querySelector("#unity-canvas");
             const videoCanvas = document.querySelector("#video-canvas");
@@ -214,7 +212,7 @@
                 if (videoCanvas && videoCanvas.width > 0) {
                     ctx.drawImage(videoCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                 }
-                // 2. Encima: Unity (AR)
+                // 2. Encima: Unity AR
                 ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                 const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
                 const blob = await fetch(dataUrl).then(r => r.blob());
@@ -233,8 +231,7 @@
                 showNotification("❌ Error al tomar la foto", "error");
             }
         }
-        // ==================== VIDEO - CÁMARA + UNITY (por ahora solo Unity) ====================
-        // Nota: Grabar video con composición es más complejo. Por ahora usamos Unity canvas.
+        // ==================== VIDEO (por ahora solo Unity) ====================
         function ToggleVideoRecording() {
             const btn = document.getElementById("videoButton");
             const unityCanvas = document.querySelector("#unity-canvas");
