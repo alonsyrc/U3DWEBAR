@@ -65,6 +65,13 @@
                 gap: 8px;
             }
         }
+        /* Used during video recording to hide unity-canvas.
+           Must use !important because Unity WebGL overrides inline styles. */
+        #unity-canvas.recording-hidden {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
     </style>
     <script>
         // === FORCE TRANSPARENT WEBGL CONTEXT FOR UNITY CANVAS ===
@@ -322,10 +329,10 @@
                     this.restore();
                 }
             };
-            // Hide unity-canvas to prevent visual duplication
-            // (AR content is now rendered via the drawImage patch on video-canvas)
-            unityCanvas.style.opacity = '0';
-            unityCanvas.style.pointerEvents = 'none';
+            // Hide unity-canvas to prevent visual duplication.
+            // Use CSS class with !important — Unity WebGL overrides inline styles.
+            unityCanvas.classList.add('recording-hidden');
+            console.log('📹 Unity canvas hidden for recording');
         }
         function stopRecordingOverlay(unityCanvas) {
             isOverlaying = false;
@@ -337,8 +344,8 @@
             }
             // Show unity-canvas again
             if (unityCanvas) {
-                unityCanvas.style.opacity = '1';
-                unityCanvas.style.pointerEvents = '';
+                unityCanvas.classList.remove('recording-hidden');
+                console.log('📹 Unity canvas visible again');
             }
         }
         function ToggleVideoRecording() {
