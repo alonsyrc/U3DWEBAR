@@ -299,37 +299,73 @@
                     }
                     drawComposite();
                     const canvasStream = compositeCanvas.captureStream(30);
-                    mediaRecorder = new MediaRecorder(canvasStream, {
-                        mimeType: MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm'
-                    });
-                    mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+                    // Pick the best supported MIME type (Android often only supports webm)
+                    const mimeTypes = [
+                        'video/mp4',
+                        'video/webm;codecs=h264',
+                        'video/webm;codecs=vp9',
+                        'video/webm;codecs=vp8',
+                        'video/webm'
+                    ];
+                    let selectedMime = 'video/webm';
+                    for (const mime of mimeTypes) {
+                        if (MediaRecorder.isTypeSupported(mime)) {
+                            selectedMime = mime;
+                            break;
+                        }
+                    }
+                    console.log('📹 Recording with MIME:', selectedMime);
+                    mediaRecorder = new MediaRecorder(canvasStream, { mimeType: selectedMime });
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+                    };
                     mediaRecorder.onstop = async () => {
                         // Stop the composite loop
                         if (compositeAnimFrame) cancelAnimationFrame(compositeAnimFrame);
                         compositeCanvas = null;
                         compositeCtx = null;
-                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
-                        const extension = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+                        if (recordedChunks.length === 0) {
+                            showNotification("❌ No se grabó video", "error");
+                            return;
+                        }
+                        const blob = new Blob(recordedChunks, { type: selectedMime });
+                        const baseMime = selectedMime.split(';')[0]; // strip codecs
+                        const extension = baseMime.includes('mp4') ? 'mp4' : 'webm';
                         const filename = `watanoge-video-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${extension}`;
-                        const file = new File([blob], filename, { type: mediaRecorder.mimeType });
+                        // Helper: download as fallback
+                        function downloadVideo() {
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = filename;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            setTimeout(() => URL.revokeObjectURL(url), 5000);
+                            showNotification("✅ Video descargado");
+                        }
+                        // Try share first, fall back to download
                         try {
-                            if (navigator.share && navigator.canShare({ files: [file] })) {
+                            const file = new File([blob], filename, { type: baseMime });
+                            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                                 await navigator.share({ files: [file], title: 'Video AR Watanoge' });
+                                showNotification("✅ Video compartido");
                             } else {
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = filename;
-                                a.click();
-                                URL.revokeObjectURL(url);
+                                downloadVideo();
                             }
-                            showNotification("✅ Video guardado");
                         } catch (err) {
-                            console.error(err);
-                            showNotification("❌ Error al guardar video", "error");
+                            // User cancelled the share dialog — not an error
+                            if (err.name === 'AbortError') {
+                                showNotification("↩️ Compartir cancelado");
+                            } else {
+                                // Share failed (e.g. Android doesn't accept webm) → download instead
+                                console.warn('Share failed, falling back to download:', err);
+                                downloadVideo();
+                            }
                         }
                     };
-                    mediaRecorder.start();
+                    // Use timeslice (1s chunks) for better data availability on Android
+                    mediaRecorder.start(1000);
                     isRecording = true;
                     btn.textContent = "⏹️ Detener";
                     btn.style.background = "rgba(200,0,0,0.95)";
