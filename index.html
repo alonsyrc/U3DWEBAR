@@ -289,8 +289,11 @@
                 if (videoCanvas && videoCanvas.width > 0) {
                     ctx.drawImage(videoCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                 }
-                // 2. Encima: Unity AR
-                ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+                // 2. Encima: Unity AR (solo si NO estamos grabando,
+                //    porque durante grabación video-canvas ya tiene Unity integrado)
+                if (!isOverlaying) {
+                    ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+                }
                 const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
                 const blob = await fetch(dataUrl).then(r => r.blob());
                 const filename = `watanoge-photo-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jpg`;
@@ -301,14 +304,42 @@
             }
         }
         // ==================== VIDEO (Cámara + Unity combinados) ====================
-        let overlayAnimFrame = null;
         let isOverlaying = false;
-        function stopOverlay() {
-            if (overlayAnimFrame) {
-                cancelAnimationFrame(overlayAnimFrame);
-                overlayAnimFrame = null;
-            }
+        const _nativeDrawImage = CanvasRenderingContext2D.prototype.drawImage;
+        function startRecordingOverlay(vCtx, unityCanvas, videoCanvas) {
+            isOverlaying = true;
+            // Monkey-patch drawImage on the video-canvas context.
+            // When arcamera draws the camera feed (HTMLVideoElement source),
+            // we immediately draw Unity AR content on top in the same paint.
+            // This eliminates flickering caused by timing gaps between separate loops.
+            vCtx.drawImage = function (...args) {
+                _nativeDrawImage.apply(this, args);
+                // After camera feed is drawn, inject Unity AR overlay
+                if (isOverlaying && args[0] instanceof HTMLVideoElement) {
+                    this.save();
+                    this.setTransform(1, 0, 0, 1, 0, 0); // reset transform
+                    _nativeDrawImage.call(this, unityCanvas, 0, 0, videoCanvas.width, videoCanvas.height);
+                    this.restore();
+                }
+            };
+            // Hide unity-canvas to prevent visual duplication
+            // (AR content is now rendered via the drawImage patch on video-canvas)
+            unityCanvas.style.opacity = '0';
+            unityCanvas.style.pointerEvents = 'none';
+        }
+        function stopRecordingOverlay(unityCanvas) {
             isOverlaying = false;
+            // Remove the drawImage patch (restores native prototype method)
+            const videoCanvas = document.querySelector("#video-canvas");
+            if (videoCanvas) {
+                const vCtx = videoCanvas.getContext('2d');
+                delete vCtx.drawImage;
+            }
+            // Show unity-canvas again
+            if (unityCanvas) {
+                unityCanvas.style.opacity = '1';
+                unityCanvas.style.pointerEvents = '';
+            }
         }
         function ToggleVideoRecording() {
             const btn = document.getElementById("videoButton");
@@ -321,41 +352,25 @@
                 }
                 recordedChunks = [];
                 try {
-                    // Strategy: Record the EXISTING video-canvas (already visible in DOM,
-                    // already being drawn to by arcamera). During recording, overlay
-                    // Unity AR content onto video-canvas after each camera frame.
-                    // This avoids the Android Chrome bug where captureStream on dynamically
-                    // created canvases produces empty frames.
                     const vCtx = videoCanvas.getContext('2d');
-                    // Overlay loop: draw Unity AR content onto video-canvas after each frame
-                    isOverlaying = true;
-                    function overlayUnity() {
-                        if (!isOverlaying) return;
-                        // Draw Unity AR content on top of the camera feed
-                        // (arcamera draws camera feed via its own setInterval loop)
-                        vCtx.drawImage(unityCanvas, 0, 0, videoCanvas.width, videoCanvas.height);
-                        overlayAnimFrame = requestAnimationFrame(overlayUnity);
-                    }
-                    overlayUnity();
+                    // Start the drawImage overlay patch
+                    startRecordingOverlay(vCtx, unityCanvas, videoCanvas);
                     // Capture stream from the existing visible video-canvas
                     let stream = null;
                     try {
                         stream = videoCanvas.captureStream(30);
                         console.log('📹 Using video-canvas captureStream');
                     } catch (e1) {
-                        console.warn('📹 video-canvas captureStream failed, trying webcam stream');
-                        // Fallback: use raw webcam stream (no AR overlay in video)
+                        console.warn('📹 captureStream failed, trying webcam stream');
                         if (window.webcamStream) {
                             stream = window.webcamStream;
-                            console.log('📹 Falling back to raw webcam stream');
                         }
                     }
                     if (!stream || stream.getTracks().length === 0) {
                         showNotification("❌ No se pudo acceder al video", "error");
-                        stopOverlay();
+                        stopRecordingOverlay(unityCanvas);
                         return;
                     }
-                    console.log('📹 Stream tracks:', stream.getTracks().length);
                     // Pick the best supported MIME type
                     const mimeTypes = [
                         'video/mp4',
@@ -374,30 +389,25 @@
                     console.log('📹 Recording with MIME:', selectedMime);
                     mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMime });
                     mediaRecorder.ondataavailable = e => {
-                        console.log('📹 Data chunk:', e.data?.size, 'bytes');
                         if (e.data) recordedChunks.push(e.data);
                     };
                     mediaRecorder.onerror = (e) => {
                         console.error('📹 MediaRecorder error:', e);
                         showNotification("❌ Error en grabación", "error");
-                        stopOverlay();
+                        stopRecordingOverlay(unityCanvas);
                         isRecording = false;
                         btn.textContent = "🎥 Grabar Video";
                         btn.style.background = "rgba(220,0,0,0.9)";
                     };
                     mediaRecorder.onstop = async () => {
-                        stopOverlay();
-                        console.log('📹 Recording stopped. Chunks:', recordedChunks.length);
-                        // Filter out empty chunks and build blob
+                        stopRecordingOverlay(unityCanvas);
                         const validChunks = recordedChunks.filter(c => c.size > 0);
                         if (validChunks.length === 0) {
-                            // Last resort: try raw webcam fallback recording
                             showNotification("⚠️ Intentando método alternativo...");
                             tryFallbackRecording(btn, selectedMime);
                             return;
                         }
                         const blob = new Blob(validChunks, { type: selectedMime });
-                        console.log('📹 Blob size:', blob.size, 'bytes');
                         if (blob.size === 0) {
                             showNotification("⚠️ Intentando método alternativo...");
                             tryFallbackRecording(btn, selectedMime);
@@ -412,11 +422,11 @@
                     showNotification("🎥 Grabando...");
                 } catch (err) {
                     console.error('📹 Failed to start recording:', err);
-                    stopOverlay();
+                    stopRecordingOverlay(unityCanvas);
                     showNotification("❌ Error al iniciar grabación", "error");
                 }
             } else {
-                stopOverlay();
+                stopRecordingOverlay(unityCanvas);
                 mediaRecorder.stop();
                 isRecording = false;
                 btn.textContent = "🎥 Grabar Video";
