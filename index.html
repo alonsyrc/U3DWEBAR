@@ -270,6 +270,19 @@
         let compositeCanvas = null;
         let compositeCtx = null;
         let compositeAnimFrame = null;
+        let capturedStream = null;
+        function cleanupComposite() {
+            if (compositeAnimFrame) {
+                cancelAnimationFrame(compositeAnimFrame);
+                compositeAnimFrame = null;
+            }
+            if (compositeCanvas && compositeCanvas.parentNode) {
+                compositeCanvas.parentNode.removeChild(compositeCanvas);
+            }
+            compositeCanvas = null;
+            compositeCtx = null;
+            capturedStream = null;
+        }
         function ToggleVideoRecording() {
             const btn = document.getElementById("videoButton");
             const unityCanvas = document.querySelector("#unity-canvas");
@@ -281,13 +294,32 @@
                 }
                 recordedChunks = [];
                 try {
-                    // Create a composite canvas that merges camera + AR
+                    // Create composite canvas and ADD IT TO THE DOM (required for Android)
+                    // Hidden visually but must be rendered for captureStream to produce frames
                     compositeCanvas = document.createElement('canvas');
-                    compositeCanvas.width = unityCanvas.width;
-                    compositeCanvas.height = unityCanvas.height;
+                    compositeCanvas.width = unityCanvas.width || window.innerWidth;
+                    compositeCanvas.height = unityCanvas.height || window.innerHeight;
+                    compositeCanvas.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-9999;';
+                    document.body.appendChild(compositeCanvas);
                     compositeCtx = compositeCanvas.getContext('2d');
+                    console.log('📹 Composite canvas:', compositeCanvas.width, 'x', compositeCanvas.height);
+                    // Draw first frame immediately
+                    compositeCtx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+                    if (videoCanvas && videoCanvas.width > 0) {
+                        compositeCtx.drawImage(videoCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                    }
+                    compositeCtx.drawImage(unityCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                    // Get the stream — use 0 fps (manual frame signaling)
+                    capturedStream = compositeCanvas.captureStream(0);
+                    const videoTrack = capturedStream.getVideoTracks()[0];
+                    console.log('📹 Stream tracks:', capturedStream.getTracks().length, 'Video track state:', videoTrack?.readyState);
+                    // Signal first frame
+                    if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+                        videoTrack.requestFrame();
+                    }
                     // Composite loop: draw camera feed + Unity AR every frame
                     function drawComposite() {
+                        if (!compositeCtx || !compositeCanvas) return;
                         compositeCtx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
                         // 1. Camera feed as background
                         if (videoCanvas && videoCanvas.width > 0) {
@@ -295,11 +327,14 @@
                         }
                         // 2. Unity AR content on top
                         compositeCtx.drawImage(unityCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                        // Signal new frame to the stream
+                        if (videoTrack && videoTrack.readyState === 'live' && typeof videoTrack.requestFrame === 'function') {
+                            videoTrack.requestFrame();
+                        }
                         compositeAnimFrame = requestAnimationFrame(drawComposite);
                     }
                     drawComposite();
-                    const canvasStream = compositeCanvas.captureStream(30);
-                    // Pick the best supported MIME type (Android often only supports webm)
+                    // Pick the best supported MIME type
                     const mimeTypes = [
                         'video/mp4',
                         'video/webm;codecs=h264',
@@ -315,21 +350,33 @@
                         }
                     }
                     console.log('📹 Recording with MIME:', selectedMime);
-                    mediaRecorder = new MediaRecorder(canvasStream, { mimeType: selectedMime });
+                    mediaRecorder = new MediaRecorder(capturedStream, { mimeType: selectedMime });
                     mediaRecorder.ondataavailable = e => {
-                        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+                        console.log('📹 Data chunk:', e.data?.size, 'bytes');
+                        if (e.data) recordedChunks.push(e.data);
+                    };
+                    mediaRecorder.onerror = (e) => {
+                        console.error('📹 MediaRecorder error:', e);
+                        showNotification("❌ Error en grabación", "error");
+                        cleanupComposite();
+                        isRecording = false;
+                        btn.textContent = "🎥 Grabar Video";
+                        btn.style.background = "rgba(220,0,0,0.9)";
                     };
                     mediaRecorder.onstop = async () => {
-                        // Stop the composite loop
-                        if (compositeAnimFrame) cancelAnimationFrame(compositeAnimFrame);
-                        compositeCanvas = null;
-                        compositeCtx = null;
+                        cleanupComposite();
+                        console.log('📹 Recording stopped. Chunks:', recordedChunks.length);
                         if (recordedChunks.length === 0) {
                             showNotification("❌ No se grabó video", "error");
                             return;
                         }
                         const blob = new Blob(recordedChunks, { type: selectedMime });
-                        const baseMime = selectedMime.split(';')[0]; // strip codecs
+                        console.log('📹 Blob size:', blob.size, 'bytes');
+                        if (blob.size === 0) {
+                            showNotification("❌ Video vacío", "error");
+                            return;
+                        }
+                        const baseMime = selectedMime.split(';')[0];
                         const extension = baseMime.includes('mp4') ? 'mp4' : 'webm';
                         const filename = `watanoge-video-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${extension}`;
                         // Helper: download as fallback
@@ -354,28 +401,26 @@
                                 downloadVideo();
                             }
                         } catch (err) {
-                            // User cancelled the share dialog — not an error
                             if (err.name === 'AbortError') {
                                 showNotification("↩️ Compartir cancelado");
                             } else {
-                                // Share failed (e.g. Android doesn't accept webm) → download instead
                                 console.warn('Share failed, falling back to download:', err);
                                 downloadVideo();
                             }
                         }
                     };
-                    // Use timeslice (1s chunks) for better data availability on Android
-                    mediaRecorder.start(1000);
+                    // Start with 500ms timeslice for frequent data collection
+                    mediaRecorder.start(500);
                     isRecording = true;
                     btn.textContent = "⏹️ Detener";
                     btn.style.background = "rgba(200,0,0,0.95)";
                     showNotification("🎥 Grabando...");
                 } catch (err) {
-                    console.error(err);
+                    console.error('📹 Failed to start recording:', err);
+                    cleanupComposite();
                     showNotification("❌ Error al iniciar grabación", "error");
                 }
             } else {
-                if (compositeAnimFrame) cancelAnimationFrame(compositeAnimFrame);
                 mediaRecorder.stop();
                 isRecording = false;
                 btn.textContent = "🎥 Grabar Video";
