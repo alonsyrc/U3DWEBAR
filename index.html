@@ -287,7 +287,14 @@
             const unityCanvas = document.querySelector("#unity-canvas");
             const videoCanvas = document.querySelector("#video-canvas");
             if (!unityCanvas) return;
+            const wasOverlaying = isOverlaying;
             try {
+                // Preparar para foto: ocultar layers en Unity (solo si no estamos ya grabando)
+                if (window.unityInstance && !wasOverlaying) {
+                    window.unityInstance.SendMessage('ARCamera', 'PrepareForCapture');
+                    // Esperar un frame para que Unity renderice el cambio
+                    await new Promise(r => requestAnimationFrame(r));
+                }
                 const tempCanvas = document.createElement("canvas");
                 const ctx = tempCanvas.getContext("2d");
                 tempCanvas.width = unityCanvas.width;
@@ -298,7 +305,7 @@
                 }
                 // 2. Encima: Unity AR (solo si NO estamos grabando,
                 //    porque durante grabación video-canvas ya tiene Unity integrado)
-                if (!isOverlaying) {
+                if (!wasOverlaying) {
                     ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                 }
                 const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
@@ -308,6 +315,11 @@
             } catch (err) {
                 console.error(err);
                 showNotification("❌ Error al tomar la foto", "error");
+            } finally {
+                // Restaurar layers (solo si no estamos grabando)
+                if (window.unityInstance && !wasOverlaying) {
+                    window.unityInstance.SendMessage('ARCamera', 'RestoreAfterCapture');
+                }
             }
         }
         // ==================== VIDEO (Cámara + Unity combinados) ====================
@@ -315,6 +327,10 @@
         const _nativeDrawImage = CanvasRenderingContext2D.prototype.drawImage;
         function startRecordingOverlay(vCtx, unityCanvas, videoCanvas) {
             isOverlaying = true;
+            // Ocultar layers específicos en Unity para el video
+            if (window.unityInstance) {
+                window.unityInstance.SendMessage('ARCamera', 'PrepareForCapture');
+            }
             // Monkey-patch drawImage on the video-canvas context.
             // When arcamera draws the camera feed (HTMLVideoElement source),
             // we immediately draw Unity AR content on top in the same paint.
@@ -336,6 +352,10 @@
         }
         function stopRecordingOverlay(unityCanvas) {
             isOverlaying = false;
+            // Restaurar layers en Unity
+            if (window.unityInstance) {
+                window.unityInstance.SendMessage('ARCamera', 'RestoreAfterCapture');
+            }
             // Remove the drawImage patch (restores native prototype method)
             const videoCanvas = document.querySelector("#video-canvas");
             if (videoCanvas) {
