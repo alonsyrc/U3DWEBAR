@@ -2,13 +2,17 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content='width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0, user-scalable=no, shrink-to-fit=yes'>
+    <meta name="viewport"
+        content='width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0, user-scalable=no, shrink-to-fit=yes'>
     <title>Unity WebGL Player | WebAR Watanoge</title>
     <link rel="stylesheet" href="TemplateData/style.css">
     <style>
-        html { height: -webkit-fill-available; }
+        html {
+            height: -webkit-fill-available;
+        }
         body {
-            margin: 0; padding: 0;
+            margin: 0;
+            padding: 0;
             min-height: 100vh;
             min-height: -webkit-fill-available;
             width: 100vw;
@@ -20,7 +24,10 @@
             align-items: center;
             justify-content: center;
             position: absolute;
-            left: 0; right: 0; top: 0; bottom: 0;
+            left: 0;
+            right: 0;
+            top: 0;
+            bottom: 0;
             background: #fffa;
             z-index: 99;
         }
@@ -42,17 +49,42 @@
             color: white;
             border: none;
             border-radius: 50px;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
             font-weight: bold;
             white-space: nowrap;
             flex: 1;
             max-width: 170px;
         }
         @media (max-width: 360px) {
-            .action-btn { padding: 10px 16px; font-size: 14px; }
-            .action-buttons { bottom: 15px; gap: 8px; }
+            .action-btn {
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+            .action-buttons {
+                bottom: 15px;
+                gap: 8px;
+            }
         }
     </style>
+    <script>
+        // === FORCE TRANSPARENT WEBGL CONTEXT FOR UNITY CANVAS ===
+        // Must run BEFORE Unity's Build.loader.js creates the WebGL context.
+        // This makes the Unity canvas background transparent so the camera feed
+        // behind it is visible.
+        (function () {
+            var _origGetContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+                if (this.id === 'unity-canvas' && (type === 'webgl' || type === 'webgl2')) {
+                    attrs = Object.assign({}, attrs || {});
+                    attrs.alpha = true;
+                    attrs.premultipliedAlpha = false;
+                    attrs.preserveDrawingBuffer = true;
+                    console.log('🔧 Forced transparent WebGL context for unity-canvas');
+                }
+                return _origGetContext.call(this, type, attrs);
+            };
+        })();
+    </script>
 </head>
 <body>
     <!--IMAGETARGETS-->
@@ -67,17 +99,20 @@
 		<imagetarget id='Pattern-hiro' src='targets/Pattern-hiro.png'></imagetarget>
 
     <video id="webcam-video" muted autoplay playsinline style="width:1px;position:absolute"></video>
-    <canvas id="video-canvas" style="width:100%; height:100%; object-fit:cover; position:absolute"></canvas>
+    <canvas id="video-canvas"
+        style="width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0; z-index:0"></canvas>
     <div id="startARDiv" class="ctaDiv">
         <select id="chooseCamSel" style="display: none;" onchange="SelectCam()"></select>
-        <p style="text-align: center; width:60vw;">This augmented reality experience requires access to your device's camera</p>
+        <p style="text-align: center; width:60vw;">This augmented reality experience requires access to your device's
+            camera</p>
         <button id="startARButton" onclick="StartAR()" style="display:none">ALLOW ACCESS</button>
     </div>
     <div id="screenshotDiv" style="display: none;" class="ctaDiv">...</div>
     <div id="confirmUrlDiv" style="display: none;" class="ctaDiv">...</div>
     <div id="errorDiv" class="ctaDiv" style="display: none; background:#aaa">...</div>
     <div id="unity-container" class="unity-mobile">
-        <canvas id="unity-canvas" style="width: 100%; height: 100%; background: #0000; z-index: -99"></canvas>
+        <canvas id="unity-canvas"
+            style="width: 100%; height: 100%; background: transparent; position: absolute; top: 0; left: 0; z-index: 1"></canvas>
         <div id="unity-loading-bar">
             <div id="unity-logo"></div>
             <div id="unity-progress-bar-empty">
@@ -87,12 +122,12 @@
     </div>
     <!-- BOTONES -->
     <div class="action-buttons">
-        <button id="photoButton" onclick="TakePhoto()" class="action-btn" 
-                style="background:rgba(0,0,0,0.85); display:none;">
+        <button id="photoButton" onclick="TakePhoto()" class="action-btn"
+            style="background:rgba(0,0,0,0.85); display:none;">
             📸 Foto
         </button>
-        <button id="videoButton" onclick="ToggleVideoRecording()" class="action-btn" 
-                style="background:rgba(220,0,0,0.9); display:none;">
+        <button id="videoButton" onclick="ToggleVideoRecording()" class="action-btn"
+            style="background:rgba(220,0,0,0.9); display:none;">
             🎥 Grabar Video
         </button>
     </div>
@@ -158,9 +193,9 @@
             video: { facingMode: window.unityFacingMode },
             audio: false
         };
-        async function RequestWebcam(){
+        async function RequestWebcam() {
             window.requestingForPermissions = true;
-            try{
+            try {
                 window.webcamStream = await navigator.mediaDevices.getUserMedia(window.WEBCAM_SETTINGS);
                 console.log("Webcam access granted");
             } catch (err) {
@@ -216,8 +251,8 @@
                 ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                 const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
                 const blob = await fetch(dataUrl).then(r => r.blob());
-                const file = new File([blob], `watanoge-photo-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.jpg`, { type: "image/jpeg" });
-                if (navigator.share && navigator.canShare({files: [file]})) {
+                const file = new File([blob], `watanoge-photo-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jpg`, { type: "image/jpeg" });
+                if (navigator.share && navigator.canShare({ files: [file] })) {
                     await navigator.share({ files: [file], title: 'Foto AR Watanoge' });
                 } else {
                     const a = document.createElement('a');
@@ -231,10 +266,14 @@
                 showNotification("❌ Error al tomar la foto", "error");
             }
         }
-        // ==================== VIDEO (por ahora solo Unity) ====================
+        // ==================== VIDEO (Cámara + Unity combinados) ====================
+        let compositeCanvas = null;
+        let compositeCtx = null;
+        let compositeAnimFrame = null;
         function ToggleVideoRecording() {
             const btn = document.getElementById("videoButton");
             const unityCanvas = document.querySelector("#unity-canvas");
+            const videoCanvas = document.querySelector("#video-canvas");
             if (!isRecording) {
                 if (!unityCanvas) {
                     showNotification("❌ Canvas no disponible", "error");
@@ -242,18 +281,39 @@
                 }
                 recordedChunks = [];
                 try {
-                    const canvasStream = unityCanvas.captureStream(30);
-                    mediaRecorder = new MediaRecorder(canvasStream, { 
+                    // Create a composite canvas that merges camera + AR
+                    compositeCanvas = document.createElement('canvas');
+                    compositeCanvas.width = unityCanvas.width;
+                    compositeCanvas.height = unityCanvas.height;
+                    compositeCtx = compositeCanvas.getContext('2d');
+                    // Composite loop: draw camera feed + Unity AR every frame
+                    function drawComposite() {
+                        compositeCtx.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+                        // 1. Camera feed as background
+                        if (videoCanvas && videoCanvas.width > 0) {
+                            compositeCtx.drawImage(videoCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                        }
+                        // 2. Unity AR content on top
+                        compositeCtx.drawImage(unityCanvas, 0, 0, compositeCanvas.width, compositeCanvas.height);
+                        compositeAnimFrame = requestAnimationFrame(drawComposite);
+                    }
+                    drawComposite();
+                    const canvasStream = compositeCanvas.captureStream(30);
+                    mediaRecorder = new MediaRecorder(canvasStream, {
                         mimeType: MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm'
                     });
                     mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
                     mediaRecorder.onstop = async () => {
+                        // Stop the composite loop
+                        if (compositeAnimFrame) cancelAnimationFrame(compositeAnimFrame);
+                        compositeCanvas = null;
+                        compositeCtx = null;
                         const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
                         const extension = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
-                        const filename = `watanoge-video-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.${extension}`;
+                        const filename = `watanoge-video-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${extension}`;
                         const file = new File([blob], filename, { type: mediaRecorder.mimeType });
                         try {
-                            if (navigator.share && navigator.canShare({files: [file]})) {
+                            if (navigator.share && navigator.canShare({ files: [file] })) {
                                 await navigator.share({ files: [file], title: 'Video AR Watanoge' });
                             } else {
                                 const url = URL.createObjectURL(blob);
@@ -279,6 +339,7 @@
                     showNotification("❌ Error al iniciar grabación", "error");
                 }
             } else {
+                if (compositeAnimFrame) cancelAnimationFrame(compositeAnimFrame);
                 mediaRecorder.stop();
                 isRecording = false;
                 btn.textContent = "🎥 Grabar Video";
@@ -308,21 +369,21 @@
             document.getElementById("videoButton").style.display = "block";
         }
         // ==================== FUNCIONES ORIGINALES ====================
-        async function LoadWebcams(){
+        async function LoadWebcams() {
             let camDevices = [];
             let devices = await navigator.mediaDevices.enumerateDevices();
             var ctr = 0;
             devices.forEach(mediaDevice => {
                 if (mediaDevice.kind === 'videoinput') {
-                    if(window.unityFacingMode == 'environment' && !mediaDevice.label.includes('facing front')){
+                    if (window.unityFacingMode == 'environment' && !mediaDevice.label.includes('facing front')) {
                         camDevices.push(mediaDevice);
                     }
-                    else if(window.unityFacingMode == 'user' && mediaDevice.label.includes('facing front')){
+                    else if (window.unityFacingMode == 'user' && mediaDevice.label.includes('facing front')) {
                         camDevices.push(mediaDevice);
                     }
-                    else{
+                    else {
                         camDevices.push(mediaDevice);
-                    }   
+                    }
                     ctr++;
                 }
             });
@@ -342,20 +403,20 @@
             });
             iTracker.WEBCAM_NAME = select.options[select.selectedIndex].innerHTML;
         }
-        function SelectCam(){
+        function SelectCam() {
             var select = document.getElementById("chooseCamSel");
             window.deviceId = select.value;
             window.WEBCAM_SETTINGS.video['deviceId'] = deviceId;
             iTracker.WEBCAM_NAME = select.options[select.selectedIndex].innerHTML;
         }
-        async function FlipCam(){
+        async function FlipCam() {
             arCamera.stopWebcam();
             window.WEBCAM_SETTINGS.video.deviceId = '';
-            if(window.WEBCAM_SETTINGS.video.facingMode == 'user'){
+            if (window.WEBCAM_SETTINGS.video.facingMode == 'user') {
                 window.WEBCAM_SETTINGS.video.facingMode = 'environment';
                 arCamera.setFlipped(false);
             }
-            else{
+            else {
                 window.WEBCAM_SETTINGS.video.facingMode = 'user';
                 arCamera.setFlipped(true);
             }
@@ -364,20 +425,20 @@
             video.srcObject = webcamStream;
             await arCamera.startWebcam(video);
         }
-        function ShowError(error){
+        function ShowError(error) {
             document.getElementById("errorDiv").style.display = "flex";
             document.getElementById("errorText").innerHTML = error;
         }
-        function ShowScreenshot(dataUrl){
+        function ShowScreenshot(dataUrl) {
             document.getElementById("screenshotDiv").style.display = "flex";
             document.getElementById("screenshotImg").src = dataUrl;
             document.getElementById("screenshotImg").style.width = "80vw";
             document.getElementById("screenshotImg").style.height = 80 / window.innerWidth * window.innerHeight + "vw";
         }
-        function ShowConfirmUrl(url){
+        function ShowConfirmUrl(url) {
             document.getElementById("confirmUrlDiv").style.display = "flex";
             window.newUrlString = url;
-            document.getElementById("confirmUrlText").innerText = "Are you sure you want to visit " + url;                
+            document.getElementById("confirmUrlText").innerText = "Are you sure you want to visit " + url;
         }
         window.ITRACKER_GLOBALS = {
             INTERNAL_SMOOTHFACTOR_POS: .075,
