@@ -254,33 +254,33 @@
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(url), 5000);
         }
-        // Helper: guardar archivo (descarga en Android, share en iOS)
+        // Helper: guardar archivo (descarga en Android/PC, share en iOS)
         async function saveFile(blob, filename, title) {
             const file = new File([blob], filename, { type: blob.type });
-            // Android: descargar directo (va a Descargas → visible en Galería)
-            if (isAndroid) {
-                downloadFile(blob, filename);
-                showNotification("✅ Guardado en Descargas");
+            // iOS: usar share (muestra el menú nativo "Guardar imagen/video")
+            if (isIOS) {
+                try {
+                    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: title });
+                        showNotification("✅ Guardado");
+                    } else {
+                        downloadFile(blob, filename);
+                        showNotification("✅ Guardado en Descargas");
+                    }
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        showNotification("↩️ Cancelado");
+                    } else {
+                        console.warn('Share failed, downloading instead:', err);
+                        downloadFile(blob, filename);
+                        showNotification("✅ Guardado en Descargas");
+                    }
+                }
                 return;
             }
-            // iOS/otros: usar share (muestra "Guardar imagen/video")
-            try {
-                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], title: title });
-                    showNotification("✅ Guardado");
-                } else {
-                    downloadFile(blob, filename);
-                    showNotification("✅ Guardado en Descargas");
-                }
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    showNotification("↩️ Cancelado");
-                } else {
-                    console.warn('Share failed, downloading instead:', err);
-                    downloadFile(blob, filename);
-                    showNotification("✅ Guardado en Descargas");
-                }
-            }
+            // Android y PC/Desktop: descargar directo (va a carpeta Descargas)
+            downloadFile(blob, filename);
+            showNotification("✅ Guardado en Descargas");
         }
         // ==================== FOTO - CÁMARA + UNITY ====================
         async function TakePhoto() {
