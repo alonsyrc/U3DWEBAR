@@ -233,7 +233,49 @@
                 if (window.unityInstance) window.unityInstance.SendMessage('ARCamera', 'OnStartWebcamFail');
             }
         }
-        // ==================== FOTO - CÁMARA + UNITY (CORREGIDO) ====================
+        // ==================== DETECCIÓN DE PLATAFORMA ====================
+        const isAndroid = /android/i.test(navigator.userAgent);
+        const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        // Helper: descargar archivo directamente
+        function downloadFile(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+        }
+        // Helper: guardar archivo (descarga en Android, share en iOS)
+        async function saveFile(blob, filename, title) {
+            const file = new File([blob], filename, { type: blob.type });
+            // Android: descargar directo (va a Descargas → visible en Galería)
+            if (isAndroid) {
+                downloadFile(blob, filename);
+                showNotification("✅ Guardado en Descargas");
+                return;
+            }
+            // iOS/otros: usar share (muestra "Guardar imagen/video")
+            try {
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: title });
+                    showNotification("✅ Guardado");
+                } else {
+                    downloadFile(blob, filename);
+                    showNotification("✅ Guardado en Descargas");
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    showNotification("↩️ Cancelado");
+                } else {
+                    console.warn('Share failed, downloading instead:', err);
+                    downloadFile(blob, filename);
+                    showNotification("✅ Guardado en Descargas");
+                }
+            }
+        }
+        // ==================== FOTO - CÁMARA + UNITY ====================
         async function TakePhoto() {
             const unityCanvas = document.querySelector("#unity-canvas");
             const videoCanvas = document.querySelector("#video-canvas");
@@ -251,16 +293,8 @@
                 ctx.drawImage(unityCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                 const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.95);
                 const blob = await fetch(dataUrl).then(r => r.blob());
-                const file = new File([blob], `watanoge-photo-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jpg`, { type: "image/jpeg" });
-                if (navigator.share && navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], title: 'Foto AR Watanoge' });
-                } else {
-                    const a = document.createElement('a');
-                    a.href = dataUrl;
-                    a.download = file.name;
-                    a.click();
-                }
-                showNotification("✅ Foto guardada");
+                const filename = `watanoge-photo-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jpg`;
+                await saveFile(blob, filename, 'Foto AR Watanoge');
             } catch (err) {
                 console.error(err);
                 showNotification("❌ Error al tomar la foto", "error");
@@ -420,33 +454,8 @@
             const baseMime = mimeType.split(';')[0];
             const extension = baseMime.includes('mp4') ? 'mp4' : 'webm';
             const filename = `watanoge-video-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${extension}`;
-            function downloadVideo() {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                setTimeout(() => URL.revokeObjectURL(url), 5000);
-                showNotification("✅ Video descargado");
-            }
-            try {
-                const file = new File([blob], filename, { type: baseMime });
-                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], title: 'Video AR Watanoge' });
-                    showNotification("✅ Video compartido");
-                } else {
-                    downloadVideo();
-                }
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    showNotification("↩️ Compartir cancelado");
-                } else {
-                    console.warn('Share failed, falling back to download:', err);
-                    downloadVideo();
-                }
-            }
+            const videoBlob = new Blob([blob], { type: baseMime });
+            await saveFile(videoBlob, filename, 'Video AR Watanoge');
         }
         function showNotification(message, type = "success") {
             let notif = document.getElementById("screenshotNotification");
